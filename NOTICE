@@ -1,0 +1,7 @@
+One sidebar for Herdr
+
+mods/one-sidebar/main.js is modified from Herdr's shipped "spaces" mod (0.1.14).
+mods/one-sidebar-tabs/main.js is modified from Herdr's shipped "tabs" mod (0.1.14).
+layouts/one-sidebar.json is modified from Herdr's shipped "main" layout (0.1.14).
+The original files are licensed under the Apache License 2.0 (see LICENSE).
+Modifications by OMKE (github.com/OMKE), 2026.
