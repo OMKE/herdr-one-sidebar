@@ -83,6 +83,8 @@ export default class Spaces extends View {
     this.byTab = new Map();
     this.tabById = new Map();
     this.ags = [];
+    this.picked = new Set();
+    this.pickedSpace = null;
     cx.timer.every(30000, (cx) => cx.notify());
     this.refreshMachines(cx);
     cx.timer.every(15000, cx => this.refreshMachines(cx));
@@ -518,10 +520,46 @@ export default class Spaces extends View {
       .child(this.agentStatus(t, a));
   }
 
+  pick(e, w, tab, cx) {
+    if (!e.modifiers.platform && !e.modifiers.shift) {
+      if (this.picked.size) {
+        this.picked.clear();
+        cx.notify();
+      }
+      return false;
+    }
+    if (this.pickedSpace !== w.id) {
+      this.picked.clear();
+      this.pickedSpace = w.id;
+    }
+    const current = w.active ? (w.tabs ?? []).find((x) => x.active) : null;
+    if (!this.picked.size && current) this.picked.add(current.id);
+    if (this.picked.has(tab.id)) this.picked.delete(tab.id);
+    else this.picked.add(tab.id);
+    cx.notify();
+    return true;
+  }
+
+  tabMenu(w, tab) {
+    const ids = (w.tabs ?? []).map((x) => x.id).filter((id) => this.picked.has(id));
+    if (this.pickedSpace === w.id && ids.length >= 2 && ids.includes(tab.id)) {
+      openOverlay({ mod: "one-sidebar-menu", kind: "popup", width: 200, height: 42, props: { ids } });
+      return;
+    }
+    const splits = shared("one-sidebar.splits") ?? {};
+    const key = panes().filter((p) => p.tab === tab.id && p.terminal).map((p) => p.terminal).sort().join(",");
+    if (splits[tab.id] || splits[key]) {
+      openOverlay({ mod: "one-sidebar-menu", kind: "popup", width: 200, height: 72, props: { split: tab.id } });
+      return;
+    }
+    run("tab.rename", { id: tab.id });
+  }
+
   tabRows({ w }, t) {
     return (w.tabs ?? []).flatMap((tab) => {
       const here = this.byTab.get(tab.id) ?? [];
       const on = w.active && tab.active;
+      const picked = this.pickedSpace === w.id && this.picked.has(tab.id);
       const base = h_flex()
         .id(`tab-${tab.id}`)
         .h(26)
@@ -536,14 +574,16 @@ export default class Spaces extends View {
         .text_color(on ? t.foreground : t.muted)
         .when(on, (el) => el.bg(t.hover))
         .when(!on, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
-        .on_mouse_down("left", (e) => { if (e.click_count === 2) run("tab.rename", { id: tab.id }); })
-        .on_mouse_down("right", () => run("tab.rename", { id: tab.id }));
+        .when(picked, (el) => el.bg(t.selected).text_color(t.foreground))
+        .on_mouse_down("left", (e) => { if (e.click_count === 2 && !e.modifiers.platform && !e.modifiers.shift) run("tab.rename", { id: tab.id }); })
+        .on_mouse_down("right", () => this.tabMenu(w, tab));
       if (here.length === 1) {
         const a = here[0];
-        return [this.agentLine(base.on_click(() => run("pane.focus", { pane: a.pane })), a, this.tabLabel(tab, a), t)];
+        return [this.agentLine(base.on_click((e, cx) => { if (!this.pick(e, w, tab, cx)) run("pane.focus", { pane: a.pane }); }), a, this.tabLabel(tab, a), t)];
       }
       const plain = base
-        .on_click(() => {
+        .on_click((e, cx) => {
+          if (this.pick(e, w, tab, cx)) return;
           if (!w.active) run("space.select", { id: w.id });
           run("tab.select", { id: tab.id });
         })
@@ -617,6 +657,7 @@ export default class Spaces extends View {
     this.byTab = new Map();
     for (const a of this.ags) this.byTab.set(a.tab, [...(this.byTab.get(a.tab) ?? []), a]);
     this.tabById = new Map(sp.flatMap((x) => x.tabs ?? []).map((x) => [x.id, x]));
+    for (const id of this.picked) if (!this.tabById.has(id)) this.picked.delete(id);
     setAgentOrder([...this.ags.filter((a) => a.pinned), ...sp.flatMap((x) => (x.tabs ?? []).flatMap((x) => this.byTab.get(x.id) ?? [])).filter((a) => !a.pinned)].map((a) => a.address));
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
